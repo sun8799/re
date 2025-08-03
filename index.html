@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESC/POS Thermal Receipt Generator</title>
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+        
+        @media print {
+            body { margin: 0; background: white; }
+            .no-print { display: none; }
+            .receipt { box-shadow: none; margin: 0; page-break-inside: avoid; }
+            @page { size: 80mm auto; margin: 0; }
+        }
+        
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+            font-family: system-ui;
+        }
+        
+        /* ESC/POS Thermal Printer Simulation */
+        .receipt {
+            width: 80mm;
+            max-width: 80mm;
+            background: white;
+            margin: 0 auto;
+            padding: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+            position: relative;
+        }
+        
+        .thermal-content {
+            padding: 0 2mm 4mm 2mm;
+            font-family: 'JetBrains Mono', 'Roboto Mono', 'Courier New', 'Lucida Console', monospace;
+            font-size: 11px;
+            line-height: 1.0;
+            font-weight: 400;
+            letter-spacing: -0.2px;
+            word-spacing: -1px;
+            color: #000;
+            background: white;
+        }
+
+        /* Top margin only for PAID */
+        .thermal-content > .paid-right:first-of-type {
+            margin-top: 20px;
+        }
+        
+        .thermal-line {
+            margin: 0;
+            padding: 1px 0;
+            white-space: pre;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            overflow: hidden;
+            display: flex;
+        }
+        
+        .thermal-line.text-only {
+            display: block;
+        }
+        
+        .item-line {
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .item-name-section {
+            width: 21ch;
+            text-align: left;
+            font-weight: 700;
+            flex-shrink: 0;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        .item-qty-section {
+            width: 4ch;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        
+        .item-price-section {
+            width: 8ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .item-amount-section {
+            width: 10ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .header-center {
+            text-align: center;
+            font-weight: 400;
+            margin-bottom: 2px;
+        }
+        
+        .header-large {
+            font-size: 12px;
+            font-weight: 700;
+        }
+        
+        .header-medium {
+            font-size: 11px;
+            font-weight: 400;
+        }
+        
+        .paid-right {
+            text-align: right;
+            font-size: 12px;
+            margin: 2px 0;
+        }
+        
+        .separator-line {
+            margin: 1px 0;
+            padding: 0;
+        }
+        
+        .info-line {
+            margin: 1px 0;
+            font-weight: 400;
+        }
+        
+        .bold-text {
+            font-weight: 700;
+        }
+        
+        .order-number-bold {
+            font-weight: 700;
+        }
+        
+        .header-row {
+            font-weight: 400;
+            display: flex;
+        }
+        
+        .header-item {
+            width: 20ch;
+            text-align: left;
+            flex-shrink: 0;
+        }
+        
+        .header-qty {
+            width: 4ch;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        
+        .header-price {
+            width: 9.5ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .header-amount {
+            width: 10ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .total-text {
+            font-weight: 400;
+        }
+        
+        .item-line {
+            font-weight: 400;
+            margin: 1px 0;
+        }
+        
+        .item-line .item-name-bold {
+            font-weight: 700;
+        }
+        
+        .total-line {
+            font-weight: 400;
+            margin: 1px 0;
+            display: flex;
+        }
+        
+        .total-item {
+            width: 21ch;
+            text-align: left;
+            font-weight: 400;
+            flex-shrink: 0;
+        }
+        
+        .total-qty {
+            width: 4ch;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        
+        .total-price {
+            width: 8ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .total-amount {
+            width: 10ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .total-text-bold {
+            font-weight: 400;
+        }
+        
+        .footer-center {
+            text-align: center;
+            font-size: 10px;
+            margin-top: 4px;
+        }
+        
+        /* Form Controls */
+        .controls {
+            max-width: 600px;
+            margin: 0 auto 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .items-container {
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .item-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        
+        .item-row input {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        .item-name { flex: 2; }
+        .item-qty { width: 70px; }
+        .item-price { width: 80px; }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover { background: #0056b3; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #1e7e34; }
+        .btn-warning { background: #ffc107; color: #212529; }
+        .btn-warning:hover { background: #e0a800; }
+        .btn-primary { background: #6f42c1; }
+        .btn-primary:hover { background: #5a2d91; }
+        .btn-info { background: #17a2b8; }
+        .btn-info:hover { background: #138496; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .printer-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+        }
+        
+        .printer-section h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 18px;
+            text-align: center;
+        }
+        
+        .export-section {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .export-section h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #495057;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            color: #6c757d;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .status-message {
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            display: none;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .status-info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .printer-config {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .config-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        
+        .config-row label {
+            min-width: 120px;
+            font-weight: 600;
+        }
+        
+        .config-row input, .config-row select {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .installation-guide {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .installation-guide h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        
+        .installation-guide pre {
+            background: #212529;
+            color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        
+        .installation-guide code {
+            background: #e9ecef;
+            color: #495057;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .test-section {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .test-section h4 {
+            margin-top: 0;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls no-print">
+        <h2>🖨️ ESC/POS Thermal Receipt Generator</h2>
+        
+        <div class="form-group">
+            <label>Receipt Date & Time:</label>
+            <input type="datetime-local" id="receiptDateTime" value="2025-07-28T11:51">
+        </div>
+        
+        <div class="form-group">
+            <label>Order Number:</label>
+            <input type="text" id="orderNumber" value="37267">
+        </div>
+        
+        <div class="items-container">
+            <h4>Items</h4>
+            <div id="itemsList">
+                <div class="item-row">
+                    <input type="text" class="item-name" placeholder="Item Name" value="VEG BIRIYANI">
+                    <input type="number" class="item-qty" placeholder="Qty" value="1" min="1">
+                    <input type="number" class="item-price" placeholder="Price" value="60.00" step="0.01">
+                    <button class="btn btn-danger btn-sm" onclick="removeItem(this)">Remove</button>
+                </div>
+            </div>
+            <button class="btn" onclick="addItem()">Add Item</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn" onclick="generateReceipt()">🔄 Generate Receipt</button>
+            <button class="btn" onclick="printReceipt()">🖨️ Print Receipt</button>
+        </div>
+        
+        <div class="loading" id="loadingIndicator">
+            <p>⏳ Processing, please wait...</p>
+        </div>
+        
+        <div class="status-message" id="statusMessage"></div>
+        
+        <!-- Installation Guide -->
+        <div class="installation-guide">
+            <h4>📦 PHP Setup Instructions</h4>
+            <p>To use the direct printing functionality, you need to install the <code>mike42/escpos-php</code> library on your server:</p>
+            <pre>composer require mike42/escpos-php</pre>
+            <p>For different printer connections, you may also need:</p>
+            <ul>
+                <li><strong>Network printing:</strong> Ensure your printer is connected to the network and accessible via TCP/IP</li>
+                <li><strong>USB printing:</strong> Install appropriate USB drivers for your printer</li>
+                <li><strong>Serial printing:</strong> Configure serial port permissions</li>
+            </ul>
+        </div>
+        
+        <!-- Printer Configuration -->
+        <div class="printer-config">
+            <h4>🔧 Printer Configuration</h4>
+            <div class="config-row">
+                <label>Printer IP:</label>
+                <input type="text" id="printerIP" value="192.168.1.100" placeholder="192.168.1.100">
+            </div>
+            <div class="config-row">
+                <label>Printer Port:</label>
+                <input type="number" id="printerPort" value="9100" placeholder="9100">
+            </div>
+            <div class="config-row">
+                <label>Connection Type:</label>
+                <select id="connectionType">
+                    <option value="network">Network (TCP/IP)</option>
+                    <option value="usb">USB</option>
+                    <option value="serial">Serial</option>
+                    <option value="bluetooth">Bluetooth</option>
+                </select>
+            </div>
+            <div class="config-row">
+                <label>Backend URL:</label>
+                <input type="text" id="backendUrl" value="/api/print.php" placeholder="/api/print.php">
+            </div>
+        </div>
+
+        <!-- Test Section -->
+        <div class="test-section">
+            <h4>🧪 Connection Testing</h4>
+            <div class="button-group">
+                <button class="btn btn-info" onclick="testPrinterConnection()">🔌 Test Printer Connection</button>
+                <button class="btn btn-warning" onclick="validateConfig()">✅ Validate Configuration</button>
+            </div>
+        </div>
+        
+        <!-- Direct Printing Section -->
+        <div class="printer-section">
+            <h4>🖨️ Direct Thermal Printing</h4>
+            <div class="button-group">
+                <button class="btn btn-success" onclick="printViaPHP()">🐘 Print via PHP Backend</button>
+                <button class="btn btn-info" onclick="printViaESCPOS()">⚡ Test ESC/POS Commands</button>
+                <button class="btn btn-warning" onclick="downloadPHPPrinter()">📥 Download PHP Script</button>
+                <button class="btn btn-primary" onclick="downloadBackendScript()">📥 Download Backend API</button>
+                <button class="btn btn-info" onclick="downloadESCPOSCommands()">📥 Download ESC/POS</button>
+            </div>
+        </div>
+        
+        <!-- Export Section for Receipt -->
+        <div class="export-section">
+            <h4>📄 Receipt Export</h4>
+            <div class="button-group">
+                <button class="btn btn-success" onclick="downloadReceiptImage()">🖼️ Receipt as Image</button>
+                <button class="btn btn-success" onclick="downloadReceiptPDF()">📄 Receipt as PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="receipt" id="receipt">
+        <div class="thermal-content">
+            <div class="thermal-line text-only paid-right">PAID</div>
+            <div class="thermal-line text-only header-center header-large">Rajalakshmi Engineering College</div>
+            <div class="thermal-line text-only header-center header-medium">REC_CAFE_KIOSK_5</div>
+            <div class="thermal-line text-only separator-line">------------------------------------------------</div>
+            <div class="thermal-line text-only info-line">Date: <span id="displayDate">28/07/2025 11:51 AM</span></div>
+            <div class="thermal-line text-only info-line">Order No: <span class="order-number-bold" id="displayOrderNo">37267</span></div>
+            <div class="thermal-line text-only separator-line">------------------------------------------------</div>
+            <div class="thermal-line header-row" id="headerRow">
+                <span class="header-item">Item</span>
+                <span class="header-qty">Qty</span>
+                <span class="header-price">Pr.</span>
+                <span class="header-amount">Amt(Rs.)</span>
+            </div>
+            <div class="thermal-line text-only separator-line">------------------------------------------------</div>
+            <div id="itemsDisplay">
+                <div class="thermal-line item-line">
+                    <span class="item-name-section">VEG BIRIYANI</span>
+                    <span class="item-qty-section">1</span>
+                    <span class="item-price-section">60.00</span>
+                    <span class="item-amount-section">60.00</span>
+                </div>
+            </div>
+            <div class="thermal-line text-only separator-line">------------------------------------------------</div>
+            <div class="thermal-line total-line" id="totalRow">
+                <span class="total-item">Total</span>
+                <span class="total-qty">1</span>
+                <span class="total-price"></span>
+                <span class="total-amount">60.00</span>
+            </div>
+            <div class="thermal-line text-only separator-line">------------------------------------------------</div>
+            <div class="thermal-line text-only footer-center">Billing powered by POSITEASY.in</div>
+        </div>
+    </div>
+
+    <script>
+        // Show/hide loading indicator
+        function showLoading() {
+            document.getElementById('loadingIndicator').classList.add('show');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loadingIndicator').classList.remove('show');
+        }
+        
+        // Status message display
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.className = `status-message status-${type}`;
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Enhanced ESC/POS formatting with proper column alignment
+        function formatESCPOSLine(item, qty, price, amount) {
+            const LINE_WIDTH = 48;
+            
+            // Column widths matching the thermal receipt layout
+            const ITEM_WIDTH = 20;
+            const QTY_WIDTH = 4;
+            const PRICE_WIDTH = 8;
+            const AMOUNT_WIDTH = 10;
+            
+            // Format item name (left-aligned, with wrapping support)
+            let itemStr = item.toString();
+            let itemLines = [];
+            
+            if (itemStr.length > ITEM_WIDTH) {
+                while (itemStr.length > 0) {
+                    if (itemStr.length <= ITEM_WIDTH) {
+                        itemLines.push(itemStr.padEnd(ITEM_WIDTH, ' '));
+                        break;
+                    } else {
+                        let cutPos = itemStr.lastIndexOf(' ', ITEM_WIDTH);
+                        if (cutPos === -1) cutPos = ITEM_WIDTH;
+                        
+                        itemLines.push(itemStr.substring(0, cutPos).padEnd(ITEM_WIDTH, ' '));
+                        itemStr = itemStr.substring(cutPos).trim();
+                    }
+                }
+            } else {
+                itemLines.push(itemStr.padEnd(ITEM_WIDTH, ' '));
+            }
+            
+            // Format quantity (center-aligned)
+            let qtyStr = qty.toString();
+            let qtyPadLeft = Math.floor((QTY_WIDTH - qtyStr.length) / 2);
+            let qtyPadRight = QTY_WIDTH - qtyPadLeft - qtyStr.length;
+            qtyStr = ' '.repeat(qtyPadLeft) + qtyStr + ' '.repeat(qtyPadRight);
+            
+            // Format price (right-aligned)
+            let priceStr = typeof price === 'number' ? price.toFixed(2) : price.toString();
+            priceStr = priceStr.padStart(PRICE_WIDTH, ' ');
+            
+            // Format amount (right-aligned)
+            let amountStr = typeof amount === 'number' ? amount.toFixed(2) : amount.toString();
+            amountStr = amountStr.padStart(AMOUNT_WIDTH, ' ');
+            
+            // Combine columns with single space separators
+            const columnData = qtyStr + ' ' + priceStr + ' ' + amountStr;
+            
+            return {
+                itemName: itemLines[0],
+                rest: columnData,
+                fullLine: itemLines[0] + columnData,
+                extraLines: itemLines.slice(1),
+                hasMultipleLines: itemLines.length > 1
+            };
+        }
+        
+        // Enhanced ESC/POS command generation based on mike42/escpos-php patterns
+        function generateESCPOSCommands(items, orderNo, dateTime) {
+            let commands = [];
+            
+            // Initialize printer
+            commands.push('\x1B\x40'); // ESC @ - Initialize
+            
+            // Header with proper alignment
+            commands.push('\x1B\x61\x02'); // Right align for PAID
+            commands.push('\x1B\x21\x08'); // Bold
+            commands.push('PAID\n');
+            
+            commands.push('\x1B\x61\x01'); // Center align
+            commands.push('\x1B\x21\x18'); // Double height + Bold
+            commands.push('Rajalakshmi Engineering College\n');
+            commands.push('\x1B\x21\x00'); // Normal text
+            commands.push('REC_CAFE_KIOSK_5\n');
+            
+            commands.push('\x1B\x61\x00'); // Left align
+            commands.push('-'.repeat(48) + '\n');
+            commands.push(`Date: ${dateTime}\n`);
+            commands.push('\x1B\x21\x08'); // Bold for order number
+            commands.push(`Order No: ${orderNo}\n`);
+            commands.push('\x1B\x21\x00'); // Normal
+            commands.push('-'.repeat(48) + '\n');
+            
+            // Header row
+            const headerFormatted = formatESCPOSLine('Item', 'Qty', 'Pr.', 'Amt(Rs.)');
+            commands.push(headerFormatted.fullLine + '\n');
+            commands.push('-'.repeat(48) + '\n');
+            
+            let totalQty = 0;
+            let totalAmount = 0;
+            
+            // Items with proper formatting
+            items.forEach(item => {
+                const amount = item.qty * item.price;
+                const formatted = formatESCPOSLine(item.name, item.qty, item.price, amount);
+                
+                // Bold item name, normal rest
+                commands.push('\x1B\x21\x08'); // Bold
+                commands.push(formatted.itemName);
+                commands.push('\x1B\x21\x00'); // Normal
+                commands.push(formatted.rest + '\n');
+                
+                // Handle long item names
+                if (formatted.hasMultipleLines) {
+                    formatted.extraLines.forEach(extraLine => {
+                        commands.push('\x1B\x21\x08'); // Bold
+                        commands.push(extraLine);
+                        commands.push('\x1B\x21\x00'); // Normal
+                        commands.push(' '.repeat(formatted.rest.length) + '\n');
+                    });
+                }
+                
+                totalQty += item.qty;
+                totalAmount += amount;
+            });
+            
+            // Total
+            commands.push('-'.repeat(48) + '\n');
+            const totalFormatted = formatESCPOSLine('Total', totalQty, '', totalAmount);
+            commands.push(totalFormatted.fullLine + '\n');
+            commands.push('-'.repeat(48) + '\n');
+            
+            // Footer
+            commands.push('\x1B\x61\x01'); // Center align
+            commands.push('Billing powered by POSITEASY.in\n');
+            commands.push('\n\n\n'); // Line feeds
+            commands.push('\x1D\x56\x01'); // Partial cut
+            
+            return commands.join('');
+        }
+        
+        // Generate PHP printer script with proper mike42/escpos-php usage
+        function generatePHPPrinter(items, orderNo, dateTime) {
+            const printerIP = document.getElementById('printerIP').value;
+            const printerPort = document.getElementById('printerPort').value;
+            const connectionType = document.getElementById('connectionType').value;
+            
+            let connectionCode = '';
+            let useStatement = '';
+            
+            switch (connectionType) {
+                case 'network':
+                    useStatement = 'use Mike42\\Escpos\\PrintConnectors\\NetworkPrintConnector;';
+                    connectionCode = `$connector = new NetworkPrintConnector("${printerIP}", ${printerPort});`;
+                    break;
+                case 'usb':
+                    useStatement = 'use Mike42\\Escpos\\PrintConnectors\\WindowsPrintConnector;';
+                    connectionCode = `$connector = new WindowsPrintConnector("USB001");`;
+                    break;
+                case 'serial':
+                    useStatement = 'use Mike42\\Escpos\\PrintConnectors\\FilePrintConnector;';
+                    connectionCode = `$connector = new FilePrintConnector("/dev/ttyUSB0");`;
+                    break;
+                case 'bluetooth':
+                    useStatement = 'use Mike42\\Escpos\\PrintConnectors\\NetworkPrintConnector;';
+                    connectionCode = `$connector = new NetworkPrintConnector("${printerIP}", ${printerPort}); // Bluetooth via network`;
+                    break;
+            }
+            
+            let totalQty = 0;
+            let totalAmount = 0;
+            
+            let itemsCode = '';
+            items.forEach(item => {
+                const amount = item.qty * item.price;
+                const formatted = formatESCPOSLine(item.name, item.qty, item.price, amount);
+                
+                itemsCode += `
+    // Item: ${item.name}
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("${formatted.itemName}");
+    $printer->selectPrintMode();
+    $printer->text("${formatted.rest}\\n");`;
+    
+                if (formatted.hasMultipleLines) {
+                    formatted.extraLines.forEach(extraLine => {
+                        itemsCode += `
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("${extraLine}");
+    $printer->selectPrintMode();
+    $printer->text("${' '.repeat(formatted.rest.length)}\\n");`;
+                    });
+                }
+                
+                totalQty += item.qty;
+                totalAmount += amount;
+            });
+            
+            const totalFormatted = formatESCPOSLine('Total', totalQty, '', totalAmount);
+            
+            return `<?php
+/**
+ * Thermal Receipt Printer Script
+ * Uses mike42/escpos-php library
+ * Install with: composer require mike42/escpos-php
+ */
+
+require_once 'vendor/autoload.php';
+
+use Mike42\\Escpos\\Printer;
+${useStatement}
+
+try {
+    // Connect to thermal printer
+    ${connectionCode}
+    $printer = new Printer($connector);
+    
+    // Initialize printer
+    $printer->initialize();
+    
+    // PAID (right aligned)
+    $printer->setJustification(Printer::JUSTIFY_RIGHT);
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("PAID\\n");
+    
+    // Header (center aligned)
+    $printer->setJustification(Printer::JUSTIFY_CENTER);
+    $printer->selectPrintMode(Printer::MODE_DOUBLE_HEIGHT | Printer::MODE_EMPHASIZED);
+    $printer->text("Rajalakshmi Engineering College\\n");
+    $printer->selectPrintMode();
+    $printer->text("REC_CAFE_KIOSK_5\\n");
+    
+    // Order info (left aligned)
+    $printer->setJustification(Printer::JUSTIFY_LEFT);
+    $printer->text(str_repeat("-", 48) . "\\n");
+    $printer->text("Date: ${dateTime}\\n");
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("Order No: ${orderNo}\\n");
+    $printer->selectPrintMode();
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Header row
+    $printer->text("${formatESCPOSLine('Item', 'Qty', 'Pr.', 'Amt(Rs.)').fullLine}\\n");
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Items${itemsCode}
+    
+    // Total
+    $printer->text(str_repeat("-", 48) . "\\n");
+    $printer->text("${totalFormatted.fullLine}\\n");
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Footer
+    $printer->setJustification(Printer::JUSTIFY_CENTER);
+    $printer->text("Billing powered by POSITEASY.in\\n");
+    $printer->feed(3);
+    $printer->cut();
+    $printer->close();
+    
+    echo "Receipt printed successfully!";
+    
+} catch (Exception $e) {
+    echo "Error printing receipt: " . $e->getMessage();
+    error_log("Thermal printer error: " . $e->getMessage());
+}
+?>`;
+        }
+        
+        // Generate PHP backend API script for handling print requests
+        function generateBackendScript(items, orderNo, dateTime) {
+            const printerIP = document.getElementById('printerIP').value;
+            const printerPort = document.getElementById('printerPort').value;
+            
+            return `<?php
+/**
+ * PHP Backend API for Thermal Printing
+ * Handles AJAX requests from the frontend
+ * Install: composer require mike42/escpos-php
+ */
+
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit(0);
+}
+
+require_once 'vendor/autoload.php';
+
+use Mike42\\Escpos\\Printer;
+use Mike42\\Escpos\\PrintConnectors\\NetworkPrintConnector;
+use Mike42\\Escpos\\PrintConnectors\\WindowsPrintConnector;
+use Mike42\\Escpos\\PrintConnectors\\FilePrintConnector;
+
+function formatReceiptLine($item, $qty, $price, $amount) {
+    $itemWidth = 20;
+    $qtyWidth = 4;
+    $priceWidth = 8;
+    $amountWidth = 10;
+    
+    // Format item name with proper padding
+    $itemStr = substr($item, 0, $itemWidth);
+    $itemStr = str_pad($itemStr, $itemWidth, ' ', STR_PAD_RIGHT);
+    
+    // Format quantity (center aligned)
+    $qtyStr = str_pad($qty, $qtyWidth, ' ', STR_PAD_BOTH);
+    
+    // Format price (right aligned)
+    $priceStr = str_pad(number_format($price, 2), $priceWidth, ' ', STR_PAD_LEFT);
+    
+    // Format amount (right aligned)
+    $amountStr = str_pad(number_format($amount, 2), $amountWidth, ' ', STR_PAD_LEFT);
+    
+    return $itemStr . $qtyStr . ' ' . $priceStr . ' ' . $amountStr;
+}
+
+try {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        throw new Exception('Only POST method allowed');
+    }
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!$input) {
+        throw new Exception('Invalid JSON data');
+    }
+    
+    $items = $input['items'] ?? [];
+    $orderNo = $input['orderNo'] ?? '';
+    $dateTime = $input['dateTime'] ?? '';
+    $printerIP = $input['printerIP'] ?? '${printerIP}';
+    $printerPort = (int)($input['printerPort'] ?? ${printerPort});
+    $connectionType = $input['connectionType'] ?? 'network';
+    
+    if (empty($items) || empty($orderNo)) {
+        throw new Exception('Missing required data');
+    }
+    
+    // Connect to printer based on connection type
+    switch ($connectionType) {
+        case 'network':
+            $connector = new NetworkPrintConnector($printerIP, $printerPort);
+            break;
+        case 'usb':
+            $connector = new WindowsPrintConnector("USB001");
+            break;
+        case 'serial':
+            $connector = new FilePrintConnector("/dev/ttyUSB0");
+            break;
+        default:
+            throw new Exception('Unsupported connection type');
+    }
+    
+    $printer = new Printer($connector);
+    
+    // Print receipt header
+    $printer->setJustification(Printer::JUSTIFY_RIGHT);
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("PAID\\n");
+    
+    $printer->setJustification(Printer::JUSTIFY_CENTER);
+    $printer->selectPrintMode(Printer::MODE_DOUBLE_HEIGHT | Printer::MODE_EMPHASIZED);
+    $printer->text("Rajalakshmi Engineering College\\n");
+    $printer->selectPrintMode();
+    $printer->text("REC_CAFE_KIOSK_5\\n");
+    
+    $printer->setJustification(Printer::JUSTIFY_LEFT);
+    $printer->text(str_repeat("-", 48) . "\\n");
+    $printer->text("Date: " . $dateTime . "\\n");
+    $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+    $printer->text("Order No: " . $orderNo . "\\n");
+    $printer->selectPrintMode();
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Print header row
+    $printer->text(formatReceiptLine('Item', 'Qty', 'Pr.', 'Amt(Rs.)') . "\\n");
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Print items
+    $totalQty = 0;
+    $totalAmount = 0;
+    
+    foreach ($items as $item) {
+        $amount = $item['qty'] * $item['price'];
+        $line = formatReceiptLine($item['name'], $item['qty'], $item['price'], $amount);
+        
+        // Bold item name only
+        $printer->selectPrintMode(Printer::MODE_EMPHASIZED);
+        $printer->text(substr($line, 0, 20));
+        $printer->selectPrintMode();
+        $printer->text(substr($line, 20) . "\\n");
+        
+        $totalQty += $item['qty'];
+        $totalAmount += $amount;
+    }
+    
+    // Print total
+    $printer->text(str_repeat("-", 48) . "\\n");
+    $printer->text(formatReceiptLine('Total', $totalQty, '', $totalAmount) . "\\n");
+    $printer->text(str_repeat("-", 48) . "\\n");
+    
+    // Print footer
+    $printer->setJustification(Printer::JUSTIFY_CENTER);
+    $printer->text("Billing powered by POSITEASY.in\\n");
+    $printer->feed(3);
+    $printer->cut();
+    $printer->close();
+    
+    echo json_encode([
+        'success' => true,
+        'message' => 'Receipt printed successfully!',
+        'orderNo' => $orderNo
+    ]);
+    
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage()
+    ]);
+    error_log("Thermal printer API error: " . $e->getMessage());
+}
+?>`;
+        }
+        
+        function addItem() {
+            const itemsList = document.getElementById('itemsList');
+            const newItem = document.createElement('div');
+            newItem.className = 'item-row';
+            newItem.innerHTML = `
+                <input type="text" class="item-name" placeholder="Item Name">
+                <input type="number" class="item-qty" placeholder="Qty" value="1" min="1">
+                <input type="number" class="item-price" placeholder="Price" step="0.01">
+                <button class="btn btn-danger btn-sm" onclick="removeItem(this)">Remove</button>
+            `;
+            itemsList.appendChild(newItem);
+        }
+        
+        function removeItem(button) {
+            button.parentElement.remove();
+            generateReceipt();
+        }
+        
+        function getItems() {
+            const itemRows = document.querySelectorAll('.item-row');
+            const items = [];
+            
+            itemRows.forEach(row => {
+                const name = row.querySelector('.item-name').value;
+                const qty = parseInt(row.querySelector('.item-qty').value) || 0;
+                const price = parseFloat(row.querySelector('.item-price').value) || 0;
+                
+                if (name && qty > 0 && price > 0) {
+                    items.push({ name, qty, price });
+                }
+            });
+            
+            return items;
+        }
+        
+        function generateReceipt() {
+            const items = getItems();
+            const orderNo = document.getElementById('orderNumber').value;
+            const dateTime = new Date(document.getElementById('receiptDateTime').value);
+            const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+            
+            // Update display
+            document.getElementById('displayDate').textContent = formattedDate;
+            document.getElementById('displayOrderNo').textContent = orderNo;
+            
+            // Update items with enhanced HTML formatting
+            const itemsDisplay = document.getElementById('itemsDisplay');
+            itemsDisplay.innerHTML = '';
+            
+            let totalQty = 0;
+            let totalAmount = 0;
+            
+            items.forEach(item => {
+                const amount = item.qty * item.price;
+                const itemName = item.name.toUpperCase();
+                
+                // Handle long item names with wrapping
+                const maxItemWidth = 20;
+                let itemLines = [];
+                let remainingName = itemName;
+                
+                while (remainingName.length > 0) {
+                    if (remainingName.length <= maxItemWidth) {
+                        itemLines.push(remainingName);
+                        break;
+                    } else {
+                        // Find last space within width, or cut at width
+                        let cutPos = remainingName.lastIndexOf(' ', maxItemWidth);
+                        if (cutPos === -1) cutPos = maxItemWidth;
+                        
+                        itemLines.push(remainingName.substring(0, cutPos));
+                        remainingName = remainingName.substring(cutPos).trim();
+                    }
+                }
+                
+                // Create main item line with proper column alignment
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'thermal-line item-line';
+                itemDiv.innerHTML = `
+                    <span class="item-name-section">${itemLines[0]}</span>
+                    <span class="item-qty-section">${item.qty}</span>
+                    <span class="item-price-section">${item.price.toFixed(2)}</span>
+                    <span class="item-amount-section">${amount.toFixed(2)}</span>
+                `;
+                itemsDisplay.appendChild(itemDiv);
+                
+                // Add additional lines for wrapped item names
+                for (let i = 1; i < itemLines.length; i++) {
+                    const extraDiv = document.createElement('div');
+                    extraDiv.className = 'thermal-line item-line';
+                    extraDiv.innerHTML = `
+                        <span class="item-name-section">${itemLines[i]}</span>
+                        <span class="item-qty-section"></span>
+                        <span class="item-price-section"></span>
+                        <span class="item-amount-section"></span>
+                    `;
+                    itemsDisplay.appendChild(extraDiv);
+                }
+                
+                totalQty += item.qty;
+                totalAmount += amount;
+            });
+            
+            // Update total with proper column alignment
+            const totalRow = document.getElementById('totalRow');
+            totalRow.innerHTML = `
+                <span class="total-item">Total</span>
+                <span class="total-qty">${totalQty}</span>
+                <span class="total-price"></span>
+                <span class="total-amount">${totalAmount.toFixed(2)}</span>
+            `;
+        }
+        
+        function printReceipt() {
+            window.print();
+        }
+        
+        // Direct Printing Functions with proper backend integration
+        async function printViaPHP() {
+            showLoading();
+            try {
+                const items = getItems();
+                const orderNo = document.getElementById('orderNumber').value;
+                const dateTime = new Date(document.getElementById('receiptDateTime').value);
+                const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                    dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+                
+                const backendUrl = document.getElementById('backendUrl').value;
+                const printerIP = document.getElementById('printerIP').value;
+                const printerPort = document.getElementById('printerPort').value;
+                const connectionType = document.getElementById('connectionType').value;
+                
+                if (items.length === 0) {
+                    throw new Error('No items to print');
+                }
+                
+                // Send to PHP backend
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        items: items,
+                        orderNo: orderNo,
+                        dateTime: formattedDate,
+                        printerIP: printerIP,
+                        printerPort: parseInt(printerPort),
+                        connectionType: connectionType
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus(`Receipt printed successfully! Order: ${result.orderNo}`, 'success');
+                } else {
+                    throw new Error(result.error || 'Printing failed');
+                }
+                
+            } catch (error) {
+                console.error('Error printing via PHP:', error);
+                if (error.message.includes('fetch')) {
+                    showStatus('Backend not available. Please set up the PHP backend script first.', 'error');
+                } else {
+                    showStatus(`Error printing: ${error.message}`, 'error');
+                }
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        async function printViaESCPOS() {
+            showLoading();
+            try {
+                const items = getItems();
+                const orderNo = document.getElementById('orderNumber').value;
+                const dateTime = new Date(document.getElementById('receiptDateTime').value);
+                const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                    dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+                
+                const escposData = generateESCPOSCommands(items, orderNo, formattedDate);
+                
+                // Try Web Serial API for direct printing
+                if ('serial' in navigator) {
+                    try {
+                        const port = await navigator.serial.requestPort();
+                        await port.open({ baudRate: 9600 });
+                        
+                        const writer = port.writable.getWriter();
+                        const encoder = new TextEncoder();
+                        
+                        await writer.write(encoder.encode(escposData));
+                        await writer.close();
+                        await port.close();
+                        
+                        showStatus('Receipt printed successfully via ESC/POS!', 'success');
+                    } catch (error) {
+                        throw new Error('Serial printing failed: ' + error.message);
+                    }
+                } else {
+                    // Show commands for manual testing
+                    console.log('ESC/POS Commands:', escposData);
+                    showStatus('ESC/POS commands generated. Check console for raw data. Use "Download ESC/POS" for file.', 'info');
+                }
+                
+            } catch (error) {
+                console.error('Error with ESC/POS:', error);
+                showStatus('ESC/POS test completed. ' + error.message, 'info');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Download Functions
+        function downloadPHPPrinter() {
+            const items = getItems();
+            const orderNo = document.getElementById('orderNumber').value;
+            const dateTime = new Date(document.getElementById('receiptDateTime').value);
+            const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+            
+            const phpCode = generatePHPPrinter(items, orderNo, formattedDate);
+            downloadFile(phpCode, `thermal_printer_${orderNo}.php`, 'text/plain');
+            
+            showStatus('PHP printer script downloaded! Install mike42/escpos-php first.', 'success');
+        }
+        
+        function downloadBackendScript() {
+            const items = getItems();
+            const orderNo = document.getElementById('orderNumber').value;
+            const dateTime = new Date(document.getElementById('receiptDateTime').value);
+            const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+            
+            const backendCode = generateBackendScript(items, orderNo, formattedDate);
+            downloadFile(backendCode, 'print_api.php', 'text/plain');
+            
+            showStatus('PHP backend API downloaded! Place in your web server and install dependencies.', 'success');
+        }
+        
+        function downloadESCPOSCommands() {
+            const items = getItems();
+            const orderNo = document.getElementById('orderNumber').value;
+            const dateTime = new Date(document.getElementById('receiptDateTime').value);
+            const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+                dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+            
+            const escposData = generateESCPOSCommands(items, orderNo, formattedDate);
+            downloadFile(escposData, `escpos_receipt_${orderNo}.bin`, 'application/octet-stream');
+            
+            showStatus('ESC/POS commands downloaded! Send this file directly to your thermal printer.', 'success');
+        }
+        
+        // Utility function for downloading files
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Receipt Export Functions (improved error handling)
+        async function downloadReceiptImage() {
+            showLoading();
+            try {
+                const receipt = document.getElementById('receipt');
+                const canvas = await html2canvas(receipt, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                });
+                
+                const link = document.createElement('a');
+                link.download = `receipt_${document.getElementById('orderNumber').value}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                
+                showStatus('Receipt image downloaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error generating receipt image:', error);
+                showStatus('Error generating receipt image. Please try again.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        async function downloadReceiptPDF() {
+            showLoading();
+            try {
+                const receipt = document.getElementById('receipt');
+                const canvas = await html2canvas(receipt, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                });
+                
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                
+                const imgData = canvas.toDataURL('image/png');
+                const imgWidth = 80;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                
+                pdf.addImage(imgData, 'PNG', 15, 15, imgWidth, imgHeight);
+                pdf.save(`receipt_${document.getElementById('orderNumber').value}.pdf`);
+                
+                showStatus('Receipt PDF downloaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error generating receipt PDF:', error);
+                showStatus('Error generating receipt PDF. Please try again.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test and validation functions
+        async function testPrinterConnection() {
+            showLoading();
+            try {
+                const printerIP = document.getElementById('printerIP').value;
+                const printerPort = document.getElementById('printerPort').value;
+                const connectionType = document.getElementById('connectionType').value;
+                
+                if (connectionType === 'network') {
+                    // Simple ping test for network printers
+                    showStatus(`Testing connection to ${printerIP}:${printerPort}...`, 'info');
+                    
+                    // In a real implementation, you'd use a backend endpoint to test connectivity
+                    setTimeout(() => {
+                        showStatus('Connection test requires backend support. Manually verify printer is accessible.', 'info');
+                    }, 2000);
+                } else {
+                    showStatus(`Testing ${connectionType} connection... Manually verify printer is connected.`, 'info');
+                }
+                
+            } catch (error) {
+                showStatus(`Connection test error: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        function validateConfig() {
+            const printerIP = document.getElementById('printerIP').value;
+            const printerPort = document.getElementById('printerPort').value;
+            const backendUrl = document.getElementById('backendUrl').value;
+            const connectionType = document.getElementById('connectionType').value;
+            
+            let issues = [];
+            
+            if (connectionType === 'network') {
+                if (!printerIP || printerIP === '') {
+                    issues.push('Printer IP is required for network connection');
+                }
+                if (!printerPort || printerPort < 1 || printerPort > 65535) {
+                    issues.push('Valid printer port (1-65535) is required');
+                }
+            }
+            
+            if (!backendUrl || backendUrl === '') {
+                issues.push('Backend URL is required for PHP printing');
+            }
+            
+            if (issues.length === 0) {
+                showStatus('Configuration validation passed! ✅', 'success');
+            } else {
+                showStatus('Configuration issues: ' + issues.join(', '), 'error');
+            }
+        }
+        
+        // Auto-update functions
+        document.addEventListener('DOMContentLoaded', function() {
+            generateReceipt();
+            
+            // Set current datetime
+            const now = new Date();
+            const localDateTime = now.getFullYear() + '-' + 
+                String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                String(now.getDate()).padStart(2, '0') + 'T' + 
+                String(now.getHours()).padStart(2, '0') + ':' + 
+                String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('receiptDateTime').value = localDateTime;
+            generateReceipt();
+        });
+        
+        // Auto-update receipt when inputs change
+        document.getElementById('receiptDateTime').addEventListener('change', generateReceipt);
+        document.getElementById('orderNumber').addEventListener('input', generateReceipt);
+        
+        // Auto-update when item inputs change
+        document.addEventListener('input', function(e) {
+            if (e.target.matches('.item-name, .item-qty, .item-price')) {
+                generateReceipt();
+            }
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 'p':
+                        e.preventDefault();
+                        printReceipt();
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        downloadReceiptImage();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        generateReceipt();
+                        break;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

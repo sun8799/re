@@ -1,0 +1,8 @@
+{
+    "name": "sun/my-php-project",
+    "description": "My test PHP printer project",
+    "type": "project",
+    "require": {
+        "mike42/escpos-php": "^2.2"
+    }
+}
