@@ -1,17 +1,13 @@
 exports.handler = async (event, context) => {
-  // Set CORS headers
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
-
-  // Handle preflight requests
+  // Handle CORS preflight requests
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
       body: ''
     };
   }
@@ -20,66 +16,74 @@ exports.handler = async (event, context) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ 
         success: false, 
-        error: 'Method not allowed. Use POST.' 
+        error: 'Only POST method allowed' 
       })
     };
   }
 
   try {
-    // Parse the request body
+    // Parse request data
     const data = JSON.parse(event.body);
-    const { items, orderNo, dateTime, printerIP, printerPort, connectionType } = data;
+    const { 
+      items = [], 
+      orderNo = '', 
+      dateTime = '', 
+      printerIP = '192.168.1.100', 
+      printerPort = 9100,
+      connectionType = 'network'
+    } = data;
 
     // Validate required data
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      throw new Error('No items provided');
-    }
-    
-    if (!orderNo) {
-      throw new Error('Order number is required');
+    if (!items.length || !orderNo) {
+      throw new Error('Missing required data: items and orderNo');
     }
 
-    // Log the print request (for debugging)
-    console.log('Print request received:', {
-      orderNo,
-      itemCount: items.length,
+    console.log('Processing print request:', { 
+      orderNo, 
+      itemCount: items.length, 
       printerIP,
-      connectionType
+      timestamp: new Date().toISOString()
     });
 
-    // Since we can't actually print from a serverless function,
-    // we'll simulate the printing process and return success
+    // Generate ESC/POS commands
+    const escposCommands = generateESCPOSCommands(items, orderNo, dateTime);
     
-    // In a real implementation, you would:
-    // 1. Send data to a printing service API
-    // 2. Queue the job in a database
-    // 3. Send to a local printer service via webhook
-    // 4. Use a printing service like PrintNode API
+    // Calculate totals
+    const totalAmount = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+    const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
 
-    // For now, we'll simulate successful printing
-    const receipt = {
-      orderNo,
-      items,
-      dateTime,
-      totalAmount: items.reduce((sum, item) => sum + (item.qty * item.price), 0),
-      timestamp: new Date().toISOString()
-    };
-
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Since Netlify Functions cannot make direct TCP connections to printers,
+    // we'll return the ESC/POS data and success status
+    // In a real scenario, you'd:
+    // 1. Save to database for a local service to pick up
+    // 2. Send to a printing service API (like PrintNode)
+    // 3. Queue for processing by another service
 
     return {
       statusCode: 200,
-      headers,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         success: true,
-        message: 'Print request processed successfully!',
+        message: 'Print job processed successfully!',
         orderNo: orderNo,
-        receipt: receipt,
-        note: 'This is a simulation. To enable actual printing, integrate with a printing service.'
+        receipt: {
+          items: items,
+          totalAmount: totalAmount.toFixed(2),
+          totalQty: totalQty,
+          dateTime: dateTime,
+          escposData: escposCommands.length + ' bytes generated'
+        },
+        timestamp: new Date().toISOString(),
+        note: 'ESC/POS commands generated. For actual printing, integrate with PrintNode API or local print server.'
       })
     };
 
@@ -88,11 +92,107 @@ exports.handler = async (event, context) => {
     
     return {
       statusCode: 500,
-      headers,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         success: false,
-        error: error.message || 'Internal server error'
+        error: error.message,
+        timestamp: new Date().toISOString()
       })
     };
   }
 };
+
+// Generate ESC/POS commands for thermal printer
+function generateESCPOSCommands(items, orderNo, dateTime) {
+  let commands = [];
+  
+  // Initialize printer
+  commands.push('\x1B\x40'); // ESC @ - Initialize
+  
+  // Header with proper alignment
+  commands.push('\x1B\x61\x02'); // Right align for PAID
+  commands.push('\x1B\x21\x08'); // Bold
+  commands.push('PAID\n');
+  
+  commands.push('\x1B\x61\x01'); // Center align
+  commands.push('\x1B\x21\x18'); // Double height + Bold
+  commands.push('Rajalakshmi Engineering College\n');
+  commands.push('\x1B\x21\x00'); // Normal text
+  commands.push('REC_CAFE_KIOSK_5\n');
+  
+  commands.push('\x1B\x61\x00'); // Left align
+  commands.push('-'.repeat(48) + '\n');
+  commands.push(`Date: ${dateTime}\n`);
+  commands.push('\x1B\x21\x08'); // Bold for order number
+  commands.push(`Order No: ${orderNo}\n`);
+  commands.push('\x1B\x21\x00'); // Normal
+  commands.push('-'.repeat(48) + '\n');
+  
+  // Header row
+  const headerLine = formatReceiptLine('Item', 'Qty', 'Pr.', 'Amt(Rs.)');
+  commands.push(headerLine + '\n');
+  commands.push('-'.repeat(48) + '\n');
+  
+  let totalQty = 0;
+  let totalAmount = 0;
+  
+  // Items with proper formatting
+  items.forEach(item => {
+    const amount = item.qty * item.price;
+    const formattedLine = formatReceiptLine(item.name, item.qty, item.price.toFixed(2), amount.toFixed(2));
+    
+    // Bold item name, normal rest
+    commands.push('\x1B\x21\x08'); // Bold
+    commands.push(formattedLine.substring(0, 20)); // Item name part
+    commands.push('\x1B\x21\x00'); // Normal
+    commands.push(formattedLine.substring(20) + '\n'); // Rest of line
+    
+    totalQty += item.qty;
+    totalAmount += amount;
+  });
+  
+  // Total
+  commands.push('-'.repeat(48) + '\n');
+  const totalLine = formatReceiptLine('Total', totalQty, '', totalAmount.toFixed(2));
+  commands.push(totalLine + '\n');
+  commands.push('-'.repeat(48) + '\n');
+  
+  // Footer
+  commands.push('\x1B\x61\x01'); // Center align
+  commands.push('Billing powered by POSITEASY.in\n');
+  commands.push('\n\n\n'); // Line feeds
+  commands.push('\x1D\x56\x01'); // Partial cut
+  
+  return commands.join('');
+}
+
+// Format receipt line with proper column alignment
+function formatReceiptLine(item, qty, price, amount) {
+  const ITEM_WIDTH = 20;
+  const QTY_WIDTH = 4;
+  const PRICE_WIDTH = 8;
+  const AMOUNT_WIDTH = 10;
+  
+  // Format item name (left-aligned, truncate if too long)
+  let itemStr = item.toString().substring(0, ITEM_WIDTH);
+  itemStr = itemStr.padEnd(ITEM_WIDTH, ' ');
+  
+  // Format quantity (center-aligned)
+  let qtyStr = qty.toString();
+  let qtyPadLeft = Math.floor((QTY_WIDTH - qtyStr.length) / 2);
+  let qtyPadRight = QTY_WIDTH - qtyPadLeft - qtyStr.length;
+  qtyStr = ' '.repeat(qtyPadLeft) + qtyStr + ' '.repeat(qtyPadRight);
+  
+  // Format price (right-aligned)
+  let priceStr = price.toString();
+  priceStr = priceStr.padStart(PRICE_WIDTH, ' ');
+  
+  // Format amount (right-aligned)
+  let amountStr = amount.toString();
+  amountStr = amountStr.padStart(AMOUNT_WIDTH, ' ');
+  
+  return itemStr + qtyStr + ' ' + priceStr + ' ' + amountStr;
+}
