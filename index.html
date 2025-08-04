@@ -522,7 +522,7 @@
             </div>
             <div class="config-row">
                 <label>Backend URL:</label>
-                <input type="text" id="backendUrl" value="/netlify/functions/print" placeholder="/netlify/functions/print">
+                <input type="text" id="backendUrl" value="/.netlify/functions/print" placeholder="/.netlify/functions/print">
             </div>
         </div>
 
@@ -1151,62 +1151,63 @@ try {
         
         // Direct Printing Functions with proper backend integration
         async function printViaPHP() {
-            showLoading();
-            try {
-                const items = getItems();
-                const orderNo = document.getElementById('orderNumber').value;
-                const dateTime = new Date(document.getElementById('receiptDateTime').value);
-                const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
-                    dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
-                
-                const backendUrl = document.getElementById('backendUrl').value;
-                const printerIP = document.getElementById('printerIP').value;
-                const printerPort = document.getElementById('printerPort').value;
-                const connectionType = document.getElementById('connectionType').value;
-                
-                if (items.length === 0) {
-                    throw new Error('No items to print');
-                }
-                
-                // Send to PHP backend
-                const response = await fetch(backendUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        items: items,
-                        orderNo: orderNo,
-                        dateTime: formattedDate,
-                        printerIP: printerIP,
-                        printerPort: parseInt(printerPort),
-                        connectionType: connectionType
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showStatus(`Receipt printed successfully! Order: ${result.orderNo}`, 'success');
-                } else {
-                    throw new Error(result.error || 'Printing failed');
-                }
-                
-            } catch (error) {
-                console.error('Error printing via PHP:', error);
-                if (error.message.includes('fetch')) {
-                    showStatus('Backend not available. Please set up the PHP backend script first.', 'error');
-                } else {
-                    showStatus(`Error printing: ${error.message}`, 'error');
-                }
-            } finally {
-                hideLoading();
-            }
+    showLoading();
+    try {
+        const items = getItems();
+        const orderNo = document.getElementById('orderNumber').value;
+        const dateTime = new Date(document.getElementById('receiptDateTime').value);
+        const formattedDate = dateTime.toLocaleDateString('en-GB') + ' ' + 
+            dateTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
+        
+        // Use the correct Netlify function URL
+        const backendUrl = '/.netlify/functions/print'; // Fixed URL
+        const printerIP = document.getElementById('printerIP').value;
+        const printerPort = document.getElementById('printerPort').value;
+        const connectionType = document.getElementById('connectionType').value;
+        
+        if (items.length === 0) {
+            throw new Error('No items to print');
         }
+        
+        // Send to Netlify function
+        const response = await fetch(backendUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                items: items,
+                orderNo: orderNo,
+                dateTime: formattedDate,
+                printerIP: printerIP,
+                printerPort: parseInt(printerPort),
+                connectionType: connectionType
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showStatus(`${result.message} Order: ${result.orderNo}`, 'success');
+        } else {
+            throw new Error(result.error || 'Printing failed');
+        }
+        
+    } catch (error) {
+        console.error('Error printing via Netlify:', error);
+        if (error.message.includes('fetch')) {
+            showStatus('Netlify function not available. Check function deployment.', 'error');
+        } else {
+            showStatus(`Error printing: ${error.message}`, 'error');
+        }
+    } finally {
+        hideLoading();
+    }
+}
         
         async function printViaESCPOS() {
             showLoading();
